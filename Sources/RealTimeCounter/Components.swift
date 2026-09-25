@@ -82,3 +82,36 @@ func liveMoneyText(_ value: Double, currency: String) -> Text {
     let end = String(full[(full.count - s)...])
     return Text(head) + Text(tail).foregroundStyle(.secondary) + Text(end)
 }
+
+/// Reports whether the hosting window is actually on screen, so animation can stop the moment
+/// the panel closes (a closed menu bar panel is ordered out, not destroyed).
+struct WindowVisibilityReader: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.onChange = { visible in
+            DispatchQueue.main.async { if isVisible != visible { isVisible = visible } }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: ReaderView, context: Context) {}
+
+    final class ReaderView: NSView {
+        var onChange: ((Bool) -> Void)?
+        private var observer: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            guard let window else { onChange?(false); return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self, weak window] _ in
+                self?.onChange?(window?.occlusionState.contains(.visible) ?? false)
+            }
+            onChange?(window.occlusionState.contains(.visible))
+        }
+    }
+}

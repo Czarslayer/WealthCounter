@@ -65,6 +65,7 @@ final class Wishlist: ObservableObject {
 struct WishlistView: View {
     let earnings: Earnings
     let currency: String
+    let isVisible: Bool
     let done: () -> Void
 
     @EnvironmentObject private var wishlist: Wishlist
@@ -110,7 +111,7 @@ struct WishlistView: View {
                 .frame(height: 170)
             } else {
                 ScrollView {
-                    TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 10)) { context in
+                    TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 10, paused: !isVisible)) { context in
                         LazyVStack(spacing: 0) {
                             ForEach(Array(wishlist.items.enumerated()), id: \.element.id) { index, item in
                                 if index > 0 { Divider() }
@@ -196,8 +197,8 @@ struct WishRow: View {
     private var showActions: Bool { hovering && !compact }
 
     var body: some View {
-        let earnedSince = earnings.earned(from: item.addedAt, to: now)
-            + overtime.earned(from: item.addedAt, to: now, earnings: earnings)
+        let overtimeSince = overtime.earned(from: item.addedAt, to: now, earnings: earnings)
+        let earnedSince = earnings.earnedUntil(now, since: item.addedAt) + overtimeSince
         let saved = min(earnedSince, item.price)
         let progress = item.price > 0 ? saved / item.price : 1
         let reached = progress >= 1
@@ -242,7 +243,8 @@ struct WishRow: View {
                 } else {
                     Text("\(earnings.workTime(for: item.price - saved, at: now)) to go")
                     Spacer()
-                    if let eta = earnings.date(whenEarned: item.price - saved, since: now) {
+                    // Regular pay since it was added has to cover what overtime hasn't.
+                    if let eta = earnings.readyDate(for: item.price - overtimeSince, since: item.addedAt) {
                         Text(readyText(eta))
                     }
                 }

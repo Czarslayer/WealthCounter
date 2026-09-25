@@ -138,20 +138,32 @@ struct Earnings {
         return total
     }
 
-    /// Everything earned since the job started. Days before today are cached so the
-    /// 30fps dashboard doesn't re-walk years of calendar on every frame.
-    func lifetime(since jobStart: Date, at now: Date) -> Double {
+    /// Identifies everything that affects the maths, so memoized results can't go stale.
+    var configKey: String {
+        "\(salary)|\(period.rawValue)|\(segments.map { "\($0.start)-\($0.end)" })"
+    }
+
+    /// Money earned from `start` until `now`. Whole days before today never change, so they're
+    /// computed once and remembered; only today's part is recalculated.
+    func earnedUntil(_ now: Date, since start: Date) -> Double {
         let midnight = calendar.startOfDay(for: now)
-        let key = "\(salary)|\(period)|\(segments.map { "\($0.start)-\($0.end)" })|\(jobStart)|\(midnight)"
-        let base: Double
-        if let cached = LifetimeCache.value, LifetimeCache.key == key {
-            base = cached
-        } else {
-            base = earned(from: jobStart, to: midnight)
-            LifetimeCache.key = key
-            LifetimeCache.value = base
-        }
-        return base + earned(from: max(jobStart, midnight), to: now)
+        guard start < midnight else { return earned(from: start, to: now) }
+        let key = "\(configKey)|\(start.timeIntervalSinceReferenceDate)|\(midnight.timeIntervalSinceReferenceDate)"
+        let base = Memo.get(key) { earned(from: start, to: midnight) }
+        return base + earned(from: midnight, to: now)
+    }
+
+    /// Everything earned since the job started.
+    func lifetime(since jobStart: Date, at now: Date) -> Double {
+        earnedUntil(now, since: jobStart)
+    }
+
+    /// When a goal of `amount`, counted from `start`, is reached. The answer only changes when the
+    /// inputs do, so it's remembered instead of walking the calendar on every frame.
+    func readyDate(for amount: Double, since start: Date) -> Date? {
+        let key = "eta|\(configKey)|\(start.timeIntervalSinceReferenceDate)|\((amount * 100).rounded())"
+        let value = Memo.get(key) { date(whenEarned: amount, since: start)?.timeIntervalSinceReferenceDate ?? -1 }
+        return value < 0 ? nil : Date(timeIntervalSinceReferenceDate: value)
     }
 
     /// The moment the money earned since `start` reaches `amount` (nil if more than ~50 years away).
@@ -193,21 +205,23 @@ struct Earnings {
     }
 
     func earnedThisMonth(at now: Date) -> Double {
-        guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) else { return 0 }
-        let today = calendar.startOfDay(for: now)
-        var day = first
-        var fullDays = 0
-        while day < today {
-            if isWorkday(day) { fullDays += 1 }
-            day = calendar.date(byAdding: .day, value: 1, to: day)!
-        }
-        return Double(fullDays) * dailyRate(on: now) + earnedToday(at: now)
+        guard let first = calendar.dateInterval(of: .month, for: now)?.start else { return 0 }
+        return earnedUntil(now, since: first)
     }
 }
 
-private enum LifetimeCache {
-    static var key = ""
-    static var value: Double?
+/// Small memo for results that depend only on their key. Cleared wholesale when it grows,
+/// which is cheap because every entry can be recomputed.
+private enum Memo {
+    static var values: [String: Double] = [:]
+
+    static func get(_ key: String, compute: () -> Double) -> Double {
+        if let v = values[key] { return v }
+        if values.count > 500 { values.removeAll() }
+        let v = compute()
+        values[key] = v
+        return v
+    }
 }
 
 /// Caches the daily rate per month so long date walks stay cheap.

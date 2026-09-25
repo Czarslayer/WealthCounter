@@ -1,16 +1,9 @@
 import SwiftUI
 import Combine
 
-/// Ticks once per second so the menu bar title stays live.
+/// The time the menu bar shows. AppModel advances it only when something visible changes.
 final class Clock: ObservableObject {
     @Published var now = Date()
-    private var timer: AnyCancellable?
-
-    init() {
-        timer = Timer.publish(every: 1, tolerance: 0.1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] in self?.now = $0 }
-    }
 }
 
 /// Owns the shared state and watches the clock for milestones, reached wishes and the end of the day.
@@ -18,12 +11,25 @@ final class AppModel: ObservableObject {
     let clock = Clock()
     let wishlist = Wishlist()
     let overtime = Overtime()
-    private var tick: AnyCancellable?
+    private var timer: Timer?
+    private var tickQueued = false
+    private var observers: [Any] = []
     private var lastMilestone: (day: Date, basis: String, index: Int)?
     private let defaults = UserDefaults.standard
 
     init() {
-        tick = clock.$now.sink { [weak self] in self?.check(at: $0) }
+        // Anything that can change what the menu bar should say gets an immediate re-check:
+        // settings edits, overtime or wishlist changes, waking from sleep, clock or day changes.
+        let center = NotificationCenter.default
+        for name in [UserDefaults.didChangeNotification, .NSSystemClockDidChange, .NSCalendarDayChanged] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.queueTick() })
+        }
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.queueTick() })
+        observers.append(overtime.objectWillChange.sink { [weak self] in self?.queueTick() })
+        observers.append(wishlist.objectWillChange.sink { [weak self] in self?.queueTick() })
+        tick()
+
         if let i = CommandLine.arguments.firstIndex(of: "--preview") {
             let page = CommandLine.arguments.dropFirst(i + 1).first ?? "dashboard"
             DispatchQueue.main.async { self.openPreview(page) }
@@ -37,7 +43,7 @@ final class AppModel: ObservableObject {
         let root: AnyView = page == "settings"
             ? AnyView(SettingsView().environmentObject(wishlist).environmentObject(overtime))
             : AnyView(ContentView(initialPage: ContentView.Page(rawValue: page) ?? .dashboard)
-                .environmentObject(wishlist).environmentObject(overtime))
+                .environmentObject(clock).environmentObject(wishlist).environmentObject(overtime))
         let w = NSWindow(contentViewController: NSHostingController(rootView: root))
         w.title = "Preview"
         if CommandLine.arguments.contains("--light") { w.appearance = NSAppearance(named: .aqua) }
@@ -48,8 +54,63 @@ final class AppModel: ObservableObject {
         fflush(stdout)
     }
 
-    private func check(at now: Date) {
+    // MARK: Scheduling
+    //
+    // Instead of waking every second, the app sleeps until the next moment the menu bar text can
+    // change: the next cent while money is coming in, or the next transition (work starting, lunch,
+    // end of day, midnight). Evenings and weekends mean roughly one wake-up per day.
+
+    private func queueTick() {
+        guard !tickQueued else { return }
+        tickQueued = true
+        DispatchQueue.main.async { [weak self] in
+            self?.tickQueued = false
+            self?.tick()
+        }
+    }
+
+    private func tick() {
+        let now = Date()
+        clock.now = now
         let e = Earnings.fromDefaults()
+        check(at: now, earnings: e)
+
+        let next = nextTick(after: now, earnings: e)
+        let wait = next.timeIntervalSince(now)
+        timer?.invalidate()
+        let t = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in self?.tick() }
+        t.tolerance = min(max(wait * 0.1, 0.1), 60)   // lets macOS batch our wake-ups with others
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func nextTick(after now: Date, earnings e: Earnings) -> Date {
+        let midnight = Calendar.current.startOfDay(for: now)
+        var candidates = [Calendar.current.date(byAdding: .day, value: 1, to: midnight)!]
+        if e.isWorkday(now) {
+            for seg in e.segments {
+                candidates.append(midnight.addingTimeInterval(Double(seg.start) * 60))
+                candidates.append(midnight.addingTimeInterval(Double(seg.end) * 60))
+            }
+        }
+
+        // Money per second right now: regular pay during work hours, the overtime rate outside them.
+        let perSecond: Double = {
+            if e.status(at: now) == .working { return e.dailyRate(on: now) / e.workSeconds }
+            if overtime.isActive, let s = overtime.sessions.last { return s.hourlyRate / 3600 }
+            return 0
+        }()
+        if perSecond > 0 {
+            let total = e.earnedToday(at: now) + overtime.earnedToday(at: now, earnings: e)
+            let nextCent = ((total * 100).rounded(.down) + 1) / 100
+            candidates.append(now.addingTimeInterval(max((nextCent - total) / perSecond, 1)))
+        }
+        return candidates.filter { $0 > now.addingTimeInterval(0.05) }.min() ?? now.addingTimeInterval(60)
+    }
+
+    // MARK: Milestones, wishes and the end-of-day summary
+
+    private func check(at now: Date, earnings e: Earnings) {
         let currency = defaults.string(forKey: "currency") ?? "MAD"
         let today = Calendar.current.startOfDay(for: now)
 
@@ -68,7 +129,7 @@ final class AppModel: ObservableObject {
             var celebrated = Set(defaults.stringArray(forKey: "celebratedWishes") ?? [])
             let reached = wishlist.items.filter { item in
                 !celebrated.contains(item.id.uuidString)
-                    && e.earned(from: item.addedAt, to: now) + overtime.earned(from: item.addedAt, to: now, earnings: e) >= item.price
+                    && e.earnedUntil(now, since: item.addedAt) + overtime.earned(from: item.addedAt, to: now, earnings: e) >= item.price
             }
             if !reached.isEmpty {
                 reached.forEach { celebrated.insert($0.id.uuidString) }
@@ -99,6 +160,7 @@ struct RealTimeCounterApp: App {
     var body: some Scene {
         MenuBarExtra {
             ContentView()
+                .environmentObject(model.clock)
                 .environmentObject(model.wishlist)
                 .environmentObject(model.overtime)
         } label: {

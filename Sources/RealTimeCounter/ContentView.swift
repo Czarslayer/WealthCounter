@@ -11,7 +11,9 @@ struct ContentView: View {
     @AppStorage("lunchEndMinutes") private var lunchEndMinutes = 14 * 60
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
+    @EnvironmentObject private var clock: Clock
     @State private var page: Page
+    @State private var isVisible = true
 
     enum Page: String { case dashboard, wishlist }
 
@@ -37,20 +39,23 @@ struct ContentView: View {
             case .dashboard:
                 if isConfigured {
                     // ~30fps so the number visibly climbs; once a second with Reduce Motion.
-                    TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 30)) { context in
-                        Dashboard(earnings: earnings, currency: currency, now: context.date, go: go, settings: showSettings)
+                    // Fully paused while the panel is closed, so only the menu bar costs anything.
+                    TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 30, paused: !isVisible)) { context in
+                        Dashboard(earnings: earnings, currency: currency, now: isVisible ? context.date : clock.now,
+                                  go: go, settings: showSettings)
                     }
                     .transition(transition(from: .leading))
                 } else {
                     SetupPrompt(openSettings: showSettings)
                 }
             case .wishlist:
-                WishlistView(earnings: earnings, currency: currency, done: { go(.dashboard) })
+                WishlistView(earnings: earnings, currency: currency, isVisible: isVisible, done: { go(.dashboard) })
                     .transition(transition(from: .trailing))
             }
         }
         .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)   // the panel is exactly as tall as its content
+        .background(WindowVisibilityReader(isVisible: $isVisible))
     }
 
     private func transition(from edge: Edge) -> AnyTransition {
