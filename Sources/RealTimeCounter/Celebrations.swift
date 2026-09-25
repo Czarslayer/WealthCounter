@@ -49,11 +49,14 @@ private struct Particle {
 struct ConfettiView: View {
     let message: String
     @State private var appeared = false
+    private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private let particles = (0..<180).map { _ in Particle() }
     private let start = Date()
 
     var body: some View {
         ZStack {
+            // With Reduce Motion the message simply fades in and out, no falling particles.
+            if !reduceMotion {
             TimelineView(.animation) { context in
                 Canvas { g, size in
                     let t = context.date.timeIntervalSince(start)
@@ -72,6 +75,7 @@ struct ConfettiView: View {
                     }
                 }
             }
+            }
 
             Text(message)
                 .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -79,11 +83,11 @@ struct ConfettiView: View {
                 .padding(.vertical, 16)
                 .background(.regularMaterial, in: Capsule())
                 .shadow(radius: 20)
-                .scaleEffect(appeared ? 1 : 0.6)
+                .scaleEffect(appeared || reduceMotion ? 1 : 0.6)
                 .opacity(appeared ? 1 : 0)
         }
         .onAppear {
-            withAnimation(.spring(duration: 0.5, bounce: 0.45)) { appeared = true }
+            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.5, bounce: 0.45)) { appeared = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
                 withAnimation(.easeIn(duration: 0.6)) { appeared = false }
             }
@@ -102,7 +106,24 @@ enum Notifier {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    /// Sends right away if allowed. The first time, asks for permission now, in the moment the
+    /// notification is useful, instead of at launch.
     static func send(title: String, body: String) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = delegate
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                    if granted { deliver(title: title, body: body) }
+                }
+            case .denied: break
+            default: deliver(title: title, body: body)
+            }
+        }
+    }
+
+    private static func deliver(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

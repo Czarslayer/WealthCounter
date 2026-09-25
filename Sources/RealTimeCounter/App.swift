@@ -23,8 +23,29 @@ final class AppModel: ObservableObject {
     private let defaults = UserDefaults.standard
 
     init() {
-        if defaults.object(forKey: "notifyEndOfDay") as? Bool ?? true { Notifier.requestAccess() }
         tick = clock.$now.sink { [weak self] in self?.check(at: $0) }
+        if let i = CommandLine.arguments.firstIndex(of: "--preview") {
+            let page = CommandLine.arguments.dropFirst(i + 1).first ?? "dashboard"
+            DispatchQueue.main.async { self.openPreview(page) }
+        }
+    }
+
+    /// Developer aid: `RealTimeCounter --preview [dashboard|wishlist|settings] [--light]` shows a page in a
+    /// normal window (and prints its window number) so the design can be screenshotted.
+    private var previewWindow: NSWindow?
+    private func openPreview(_ page: String) {
+        let root: AnyView = page == "settings"
+            ? AnyView(SettingsView())
+            : AnyView(ContentView(initialPage: ContentView.Page(rawValue: page) ?? .dashboard)
+                .environmentObject(wishlist).environmentObject(overtime))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: root))
+        w.title = "Preview"
+        if CommandLine.arguments.contains("--light") { w.appearance = NSAppearance(named: .aqua) }
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        previewWindow = w
+        print("PREVIEW_WINDOW \(w.windowNumber)")
+        fflush(stdout)
     }
 
     private func check(at now: Date) {
@@ -83,6 +104,10 @@ struct RealTimeCounterApp: App {
             MenuBarLabel(clock: model.clock, overtime: model.overtime)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
@@ -103,7 +128,12 @@ struct MenuBarLabel: View {
                          startMinutes: startMinutes, endMinutes: endMinutes,
                          lunchEnabled: lunchEnabled, lunchStartMinutes: lunchStartMinutes, lunchEndMinutes: lunchEndMinutes)
         let total = e.earnedToday(at: clock.now) + overtime.earnedToday(at: clock.now, earnings: e)
-        Text(total.money(currency))
-            .monospacedDigit()
+        if UserDefaults.standard.object(forKey: "salary") == nil {
+            Text("Set Salary")
+        } else {
+            Text(total.money(currency))
+                .monospacedDigit()
+                .accessibilityLabel("WealthCounter, earned today \(total.money(currency))")
+        }
     }
 }

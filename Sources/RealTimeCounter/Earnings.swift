@@ -177,7 +177,7 @@ struct Earnings {
         return nil
     }
 
-    /// Work time needed to earn `amount` at the current hourly rate, e.g. "3d 4h" (d = one workday).
+    /// Work time needed to earn `amount` at the current hourly rate, e.g. "3 workdays 4h".
     func workTime(for amount: Double, at now: Date) -> String {
         let rate = hourlyRate(on: now)
         guard rate > 0 else { return "—" }
@@ -186,7 +186,8 @@ struct Earnings {
         let d = totalMinutes / dayMinutes
         let h = (totalMinutes % dayMinutes) / 60
         let m = totalMinutes % 60
-        if d > 0 { return h > 0 ? "\(d)d \(h)h" : "\(d)d" }
+        let days = "\(d) workday\(d == 1 ? "" : "s")"
+        if d > 0 { return d >= 10 || h == 0 ? days : "\(days) \(h)h" }
         if h > 0 { return m > 0 ? "\(h)h \(m)m" : "\(h)h" }
         return "\(max(m, 1))m"
     }
@@ -224,13 +225,25 @@ private struct MonthRates {
     }
 }
 
+private enum MoneyFormatters {
+    static var cache: [String: NumberFormatter] = [:]
+}
+
 extension Double {
+    /// Currency string, truncated (never rounded up) so a live counter only ever moves forward.
     func money(_ currency: String, decimals: Int = 2) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = currency.isEmpty ? "USD" : currency
-        f.minimumFractionDigits = decimals
-        f.maximumFractionDigits = decimals
+        let code = currency.isEmpty ? "USD" : currency
+        let key = "\(code)|\(decimals)"
+        let f = MoneyFormatters.cache[key] ?? {
+            let f = NumberFormatter()
+            f.numberStyle = .currency
+            f.currencyCode = code
+            f.minimumFractionDigits = decimals
+            f.maximumFractionDigits = decimals
+            f.roundingMode = .down
+            MoneyFormatters.cache[key] = f
+            return f
+        }()
         return f.string(from: NSNumber(value: self)) ?? String(format: "%.\(decimals)f", self)
     }
 }
