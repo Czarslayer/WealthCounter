@@ -17,8 +17,8 @@ A macOS menu bar app that shows the money you've earned today — live, ticking 
 
 ## Install
 
-1. Download `WealthCounter.zip` from the [latest release](https://github.com/Czarslayer/WealthCounter/releases/latest) and unzip it.
-2. Move **RealTimeCounter.app** to your Applications folder.
+1. Download `WealthCounter.dmg` from the [latest release](https://github.com/Czarslayer/WealthCounter/releases/latest) and open it.
+2. Drag **RealTimeCounter.app** onto the **Applications** folder.
 3. The app isn't notarized, so the first time **right-click it → Open → Open**.
    If macOS still blocks it, run:
    ```bash
@@ -34,6 +34,12 @@ Requires macOS 14 Sonoma or later.
 ```
 
 This compiles the app with Xcode's toolchain, bundles it with its icon, installs it to `/Applications` and launches it.
+
+To package a release installer (`WealthCounter.dmg`):
+
+```bash
+./release.sh
+```
 
 ## How earnings are calculated
 
