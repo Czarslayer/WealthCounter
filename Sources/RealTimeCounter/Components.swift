@@ -3,21 +3,23 @@ import SwiftUI
 /// Quiet, menu-like button: highlights on hover, darkens the instant the pointer goes down.
 struct SubtleButtonStyle: ButtonStyle {
     var horizontalPadding: CGFloat = 8
+    var minHeight: CGFloat = 28
 
     func makeBody(configuration: Configuration) -> some View {
-        SubtleButton(configuration: configuration, horizontalPadding: horizontalPadding)
+        SubtleButton(configuration: configuration, horizontalPadding: horizontalPadding, minHeight: minHeight)
     }
 
     private struct SubtleButton: View {
         let configuration: Configuration
         let horizontalPadding: CGFloat
+        let minHeight: CGFloat
         @State private var hovering = false
         @Environment(\.isEnabled) private var isEnabled
 
         var body: some View {
             configuration.label
                 .padding(.horizontal, horizontalPadding)
-                .frame(minHeight: 28)
+                .frame(minHeight: minHeight)
                 .contentShape(Rectangle())
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)

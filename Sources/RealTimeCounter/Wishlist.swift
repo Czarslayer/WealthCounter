@@ -191,7 +191,9 @@ struct WishRow: View {
     @EnvironmentObject private var wishlist: Wishlist
     @EnvironmentObject private var overtime: Overtime
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
+    @State private var hovering = CommandLine.arguments.contains("--hover")   // dev preview of the hover state
+
+    private var showActions: Bool { hovering && !compact }
 
     var body: some View {
         let earnedSince = earnings.earned(from: item.addedAt, to: now)
@@ -207,9 +209,11 @@ struct WishRow: View {
                 Text(item.price.money(currency, decimals: 0))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                if !compact && hovering {
-                    // Out of the layout until hover, so the price sits flush right; on hover the
-                    // price slides over and the actions blur in.
+                    .padding(.trailing, showActions ? 48 : 0)   // only the price moves, sideways
+            }
+            // The actions float over the row, so revealing them never changes its height.
+            .overlay(alignment: .trailing) {
+                if showActions {
                     HStack(spacing: 2) {
                         Button { onEdit?() } label: {
                             Image(systemName: "pencil").frame(width: 20, height: 20)
@@ -220,13 +224,12 @@ struct WishRow: View {
                         }
                         .help("Remove")
                     }
-                    .buttonStyle(SubtleButtonStyle(horizontalPadding: 0))
+                    .buttonStyle(SubtleButtonStyle(horizontalPadding: 0, minHeight: 20))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)           // offered as accessibility actions instead
                     .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
                 }
             }
-            .frame(minHeight: 20)                        // row height doesn't change when actions appear
 
             ProgressView(value: progress)
                 .controlSize(.small)
