@@ -28,6 +28,10 @@ private struct PaySettings: View {
     @AppStorage("currency") private var currency = "MAD"
     @AppStorage("jobStart") private var jobStart = 0.0
     @AppStorage("overtimeMultiplier") private var multiplier = 1.5
+    @AppStorage("milestoneStep") private var milestoneStep = 100.0
+    @EnvironmentObject private var wishlist: Wishlist
+    @EnvironmentObject private var overtime: Overtime
+    @State private var pendingCurrency: CurrencyChange?
 
     private static let currencies = Locale.commonISOCurrencyCodes.sorted()
 
@@ -38,7 +42,11 @@ private struct PaySettings: View {
                 Picker("Paid", selection: $period) {
                     ForEach(SalaryPeriod.allCases) { Text($0.rawValue).tag($0.rawValue) }
                 }
-                Picker("Currency", selection: $currency) {
+                // Picking a currency doesn't switch right away: the sheet asks whether to convert amounts.
+                Picker("Currency", selection: Binding(
+                    get: { currency },
+                    set: { if $0 != currency { pendingCurrency = CurrencyChange(from: currency, to: $0) } }
+                )) {
                     ForEach(currencyOptions, id: \.self) { code in
                         Text("\(Locale.current.localizedString(forCurrencyCode: code) ?? code) (\(code))").tag(code)
                     }
@@ -65,6 +73,20 @@ private struct PaySettings: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
+        .sheet(item: $pendingCurrency) { change in
+            CurrencyChangeSheet(change: change, salary: salary, wishCount: wishlist.items.count,
+                                convert: { convert(to: change.to, rate: $0) },
+                                relabel: { currency = change.to })
+        }
+    }
+
+    /// Multiplies every stored amount by the same rate, so totals, rates and progress stay identical.
+    private func convert(to code: String, rate: Double) {
+        salary *= rate
+        milestoneStep = max((milestoneStep * rate).rounded(), 1)
+        wishlist.convertPrices(by: rate)
+        overtime.convertRates(by: rate)
+        currency = code
     }
 
     private var currencyOptions: [String] {
@@ -163,6 +185,85 @@ private struct MotivationSettings: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct CurrencyChange: Identifiable {
+    let from: String
+    let to: String
+    var id: String { from + to }
+}
+
+private struct CurrencyChangeSheet: View {
+    let change: CurrencyChange
+    let salary: Double
+    let wishCount: Int
+    let convert: (Double) -> Void
+    let relabel: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var rate: Double?
+    @FocusState private var rateFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Switch to \(name(change.to))?")
+                .font(.headline)
+
+            Text("Your salary\(wishCount > 0 ? ", wishlist prices" : "") and overtime are in \(name(change.from)). Convert them with today's exchange rate and every total and progress bar stays exactly where it is.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                Text("1 \(change.from) =")
+                TextField("Exchange rate", value: $rate, format: .number.precision(.fractionLength(0...6)), prompt: Text("Rate"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 110)
+                    .focused($rateFocused)
+                Text(change.to)
+                Spacer()
+                Link("Look Up Rate", destination: URL(string: "https://www.google.com/search?q=1+\(change.from)+to+\(change.to)")!)
+                    .font(.callout)
+            }
+            .monospacedDigit()
+
+            Group {
+                if let rate, rate > 0 {
+                    Text("Salary \(salary.money(change.from)) becomes \((salary * rate).money(change.to)).")
+                } else {
+                    Text("Enter how much 1 \(change.from) is worth in \(change.to).")
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+
+            HStack {
+                Button("Only Change Symbol") {
+                    relabel()
+                    dismiss()
+                }
+                .help("Keep every number as it is, for example if you already entered your salary in \(change.to).")
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Convert") {
+                    if let rate { convert(rate) }
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled((rate ?? 0) <= 0)
+            }
+            .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(width: 420)
+        .onAppear { rateFocused = true }
+    }
+
+    private func name(_ code: String) -> String {
+        Locale.current.localizedString(forCurrencyCode: code) ?? code
     }
 }
 

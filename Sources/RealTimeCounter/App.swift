@@ -19,7 +19,7 @@ final class AppModel: ObservableObject {
     let wishlist = Wishlist()
     let overtime = Overtime()
     private var tick: AnyCancellable?
-    private var lastMilestone: (day: Date, index: Int)?
+    private var lastMilestone: (day: Date, basis: String, index: Int)?
     private let defaults = UserDefaults.standard
 
     init() {
@@ -35,7 +35,7 @@ final class AppModel: ObservableObject {
     private var previewWindow: NSWindow?
     private func openPreview(_ page: String) {
         let root: AnyView = page == "settings"
-            ? AnyView(SettingsView())
+            ? AnyView(SettingsView().environmentObject(wishlist).environmentObject(overtime))
             : AnyView(ContentView(initialPage: ContentView.Page(rawValue: page) ?? .dashboard)
                 .environmentObject(wishlist).environmentObject(overtime))
         let w = NSWindow(contentViewController: NSHostingController(rootView: root))
@@ -58,10 +58,11 @@ final class AppModel: ObservableObject {
             let step = max(defaults.object(forKey: "milestoneStep") as? Double ?? 100, 1)
             let total = e.earnedToday(at: now) + overtime.earnedToday(at: now, earnings: e)
             let index = Int(total / step)
-            if let last = lastMilestone, last.day == today, index > last.index {
+            let basis = "\(currency)|\(e.salary)|\(step)"
+            if let last = lastMilestone, last.day == today, last.basis == basis, index > last.index {
                 Celebration.show("💰 \((Double(index) * step).money(currency, decimals: 0)) today!")
             }
-            lastMilestone = (today, index)
+            lastMilestone = (today, basis, index)
 
             // Wishlist items that just became affordable.
             var celebrated = Set(defaults.stringArray(forKey: "celebratedWishes") ?? [])
@@ -107,6 +108,8 @@ struct RealTimeCounterApp: App {
 
         Settings {
             SettingsView()
+                .environmentObject(model.wishlist)
+                .environmentObject(model.overtime)
         }
     }
 }

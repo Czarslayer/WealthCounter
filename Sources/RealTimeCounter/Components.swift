@@ -33,6 +33,7 @@ struct SubtleButtonStyle: ButtonStyle {
 /// Title bar for a sub-page, with a back button that also answers to Esc.
 struct PageHeader: View {
     let title: String
+    var escapeGoesBack = true   // off while a nested task (like editing) owns Esc
     let back: () -> Void
 
     var body: some View {
@@ -43,7 +44,7 @@ struct PageHeader: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(SubtleButtonStyle(horizontalPadding: 0))
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(escapeGoesBack ? .cancelAction : nil)
             .help("Back")
             .accessibilityLabel("Back")
 

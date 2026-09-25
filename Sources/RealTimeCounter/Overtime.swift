@@ -36,6 +36,11 @@ final class Overtime: ObservableObject {
         return earned
     }
 
+    /// Re-expresses logged overtime in a new currency when the salary is converted.
+    func convertRates(by rate: Double) {
+        for i in sessions.indices { sessions[i].hourlyRate *= rate }
+    }
+
     func earnedInCurrentSession(at now: Date, earnings: Earnings) -> Double {
         guard isActive, let s = sessions.last else { return 0 }
         return value(of: s, from: s.start, to: now, earnings: earnings)

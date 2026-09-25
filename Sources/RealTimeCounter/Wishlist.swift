@@ -24,6 +24,18 @@ final class Wishlist: ObservableObject {
         items.append(WishItem(name: name, price: price))
     }
 
+    /// Edits keep `addedAt`, so everything earned since the item was added still counts toward it.
+    func update(_ id: UUID, name: String, price: Double) {
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].name = name
+        items[i].price = price
+    }
+
+    /// Re-expresses every price in a new currency. Earnings scale by the same rate, so progress is unchanged.
+    func convertPrices(by rate: Double) {
+        for i in items.indices { items[i].price *= rate }
+    }
+
     /// The most recent removal, kept until it's undone or replaced so people can recover from mistakes.
     @Published private(set) var lastRemoved: (item: WishItem, index: Int)?
 
@@ -59,11 +71,12 @@ struct WishlistView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var name = ""
     @State private var price: Double?
+    @State private var editing: UUID?
     @FocusState private var nameFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PageHeader(title: "Wishlist") {
+            PageHeader(title: "Wishlist", escapeGoesBack: editing == nil) {
                 wishlist.clearUndo()
                 done()
             }
@@ -82,7 +95,7 @@ struct WishlistView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canAdd)
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(editing == nil ? .defaultAction : nil)
                 .help("Add to Wishlist")
                 .accessibilityLabel("Add to Wishlist")
             }
@@ -101,8 +114,20 @@ struct WishlistView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(wishlist.items.enumerated()), id: \.element.id) { index, item in
                                 if index > 0 { Divider() }
-                                WishRow(item: item, earnings: earnings, currency: currency, now: context.date)
-                                    .padding(.vertical, 10)
+                                Group {
+                                    if editing == item.id {
+                                        WishEditor(item: item) { newName, newPrice in
+                                            wishlist.update(item.id, name: newName, price: newPrice)
+                                            editing = nil
+                                        } cancel: {
+                                            editing = nil
+                                        }
+                                    } else {
+                                        WishRow(item: item, earnings: earnings, currency: currency, now: context.date,
+                                                onEdit: { editing = item.id })
+                                    }
+                                }
+                                .padding(.vertical, 10)
                             }
                         }
                     }
@@ -161,6 +186,7 @@ struct WishRow: View {
     let currency: String
     let now: Date
     var compact = false
+    var onEdit: (() -> Void)?
 
     @EnvironmentObject private var wishlist: Wishlist
     @EnvironmentObject private var overtime: Overtime
@@ -181,6 +207,15 @@ struct WishRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 if !compact {
+                    Button { onEdit?() } label: {
+                        Image(systemName: "pencil").frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(SubtleButtonStyle(horizontalPadding: 0))
+                    .foregroundStyle(.secondary)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
+                    .help("Edit")
+                    .accessibilityHidden(true)
                     Button { withAnimation(.snappy) { wishlist.remove(item) } } label: {
                         Image(systemName: "trash").frame(width: 20, height: 20)
                     }
@@ -215,10 +250,16 @@ struct WishRow: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .onTapGesture(count: 2) { onEdit?() }      // double-click to edit, like renaming in Finder
         .contextMenu {
+            if !compact {
+                Button("Edit") { onEdit?() }
+                Divider()
+            }
             Button("Remove", role: .destructive) { withAnimation(.snappy) { wishlist.remove(item) } }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Edit") { onEdit?() }
         .accessibilityAction(named: "Remove") { wishlist.remove(item) }
     }
 
@@ -232,5 +273,61 @@ struct WishRow: View {
             return "Ready \(eta.formatted(.dateTime.weekday(.abbreviated).day().month()))"
         }
         return "Ready \(eta.formatted(.dateTime.month(.abbreviated).year()))"
+    }
+}
+
+/// Inline editor for a wish. Return saves, Esc cancels. Progress is kept because `addedAt` doesn't change.
+struct WishEditor: View {
+    let item: WishItem
+    let save: (String, Double) -> Void
+    let cancel: () -> Void
+
+    @State private var name: String
+    @State private var price: Double?
+    @FocusState private var nameFocused: Bool
+
+    init(item: WishItem, save: @escaping (String, Double) -> Void, cancel: @escaping () -> Void) {
+        self.item = item
+        self.save = save
+        self.cancel = cancel
+        _name = State(initialValue: item.name)
+        _price = State(initialValue: item.price)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("Name", text: $name, prompt: Text("Name"))
+                    .focused($nameFocused)
+                TextField("Price", value: $price, format: .number, prompt: Text("Price"))
+                    .frame(width: 76)
+                    .multilineTextAlignment(.trailing)
+            }
+            .textFieldStyle(.roundedBorder)
+            .onSubmit(commit)
+
+            HStack {
+                Text("Progress so far is kept.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel", role: .cancel, action: cancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Save", action: commit)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isValid)
+            }
+            .controlSize(.small)
+        }
+        .onAppear { nameFocused = true }
+    }
+
+    private var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && (price ?? 0) > 0
+    }
+
+    private func commit() {
+        guard isValid, let price else { return }
+        save(name.trimmingCharacters(in: .whitespaces), price)
     }
 }
