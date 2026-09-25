@@ -190,6 +190,7 @@ struct WishRow: View {
 
     @EnvironmentObject private var wishlist: Wishlist
     @EnvironmentObject private var overtime: Overtime
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
 
     var body: some View {
@@ -206,27 +207,26 @@ struct WishRow: View {
                 Text(item.price.money(currency, decimals: 0))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                if !compact {
-                    Button { onEdit?() } label: {
-                        Image(systemName: "pencil").frame(width: 20, height: 20)
+                if !compact && hovering {
+                    // Out of the layout until hover, so the price sits flush right; on hover the
+                    // price slides over and the actions blur in.
+                    HStack(spacing: 2) {
+                        Button { onEdit?() } label: {
+                            Image(systemName: "pencil").frame(width: 20, height: 20)
+                        }
+                        .help("Edit")
+                        Button { withAnimation(.snappy) { wishlist.remove(item) } } label: {
+                            Image(systemName: "trash").frame(width: 20, height: 20)
+                        }
+                        .help("Remove")
                     }
                     .buttonStyle(SubtleButtonStyle(horizontalPadding: 0))
                     .foregroundStyle(.secondary)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
-                    .help("Edit")
-                    .accessibilityHidden(true)
-                    Button { withAnimation(.snappy) { wishlist.remove(item) } } label: {
-                        Image(systemName: "trash").frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(SubtleButtonStyle(horizontalPadding: 0))
-                    .foregroundStyle(.secondary)
-                    .opacity(hovering ? 1 : 0)          // reserved space, so nothing shifts on hover
-                    .allowsHitTesting(hovering)
-                    .help("Remove")
-                    .accessibilityHidden(true)           // offered as an accessibility action instead
+                    .accessibilityHidden(true)           // offered as accessibility actions instead
+                    .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
                 }
             }
+            .frame(minHeight: 20)                        // row height doesn't change when actions appear
 
             ProgressView(value: progress)
                 .controlSize(.small)
@@ -249,7 +249,9 @@ struct WishRow: View {
             .monospacedDigit()
         }
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.3)) { hovering = inside }
+        }
         .onTapGesture(count: 2) { onEdit?() }      // double-click to edit, like renaming in Finder
         .contextMenu {
             if !compact {
