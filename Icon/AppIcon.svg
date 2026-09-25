@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">RealTime Counter</title>
+  <desc id="desc">A gold clock coin inside a green progress ring on a macOS rounded square.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1FC592"/>
+      <stop offset="1" stop-color="#067552"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E6FCF0"/>
+      <stop offset="1" stop-color="#8CE99A"/>
+    </linearGradient>
+    <radialGradient id="gold" cx="0.36" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#FFEBAD"/>
+      <stop offset="0.5" stop-color="#FCC744"/>
+      <stop offset="1" stop-color="#DE960F"/>
+    </radialGradient>
+    <radialGradient id="face" cx="0.4" cy="0.32" r="0.8">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFEFBF"/>
+    </radialGradient>
+    <!-- Soft shadows built from radial gradients (filters aren't rendered everywhere) -->
+    <radialGradient id="dropShadow">
+      <stop offset="0.72" stop-color="#03281D" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#03281D" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="faceInset">
+      <stop offset="0.9" stop-color="#8A5A00" stop-opacity="0"/>
+      <stop offset="1" stop-color="#8A5A00" stop-opacity="0.28"/>
+    </radialGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- macOS icon grid: 824×824 rounded square centred on a 1024 canvas -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#shine)"/>
+
+  <!-- Workday progress ring: faint track + bright 290° sweep with a live dot -->
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="58"/>
+  <path d="M512 212 A300 300 0 1 1 229.9 409.4"
+        fill="none" stroke="url(#ring)" stroke-width="58" stroke-linecap="round"/>
+  <circle cx="229.9" cy="409.4" r="54" fill="url(#glow)"/>
+  <circle cx="229.9" cy="409.4" r="17" fill="#FFFFFF"/>
+
+  <!-- Clock coin -->
+  <circle cx="512" cy="534" r="232" fill="url(#dropShadow)"/>
+  <circle cx="512" cy="512" r="205" fill="url(#gold)"/>
+  <circle cx="512" cy="512" r="196" fill="none" stroke="#C9870C" stroke-opacity="0.55"
+          stroke-width="12" stroke-dasharray="5 9"/>
+  <circle cx="512" cy="512" r="176" fill="none" stroke="#FFF4CC" stroke-opacity="0.7" stroke-width="5"/>
+  <circle cx="512" cy="512" r="160" fill="url(#face)"/>
+  <circle cx="512" cy="512" r="160" fill="url(#faceInset)"/>
+
+  <g stroke="#D39B33" stroke-width="16" stroke-linecap="round">
+    <line x1="512" y1="378" x2="512" y2="398"/>
+    <line x1="646" y1="512" x2="626" y2="512"/>
+    <line x1="512" y1="646" x2="512" y2="626"/>
+    <line x1="378" y1="512" x2="398" y2="512"/>
+  </g>
+
+  <g stroke="#0B5E45" stroke-linecap="round">
+    <line x1="512" y1="512" x2="446.5" y2="466.1" stroke-width="30"/>
+    <line x1="512" y1="512" x2="614.2" y2="453" stroke-width="22"/>
+  </g>
+  <circle cx="512" cy="512" r="21" fill="#0B5E45"/>
+  <circle cx="512" cy="512" r="8" fill="#FCC744"/>
+</svg>
